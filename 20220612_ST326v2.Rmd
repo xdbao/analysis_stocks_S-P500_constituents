@@ -1,0 +1,802 @@
+---
+title: "ST326 Coursework 2022"
+output:
+  html_document: default
+  pdf_document: default
+date: '2022-12-06'
+---
+
+```{r}
+library(quantmod)
+library(lubridate)
+library(tseries)
+library(RColorBrewer)
+```
+
+### Question 1
+
+The selected 10 stocks from top 100 constituents of S&P500 by index weight as of 10th October 2022 are as follows:
+
+1.  Apple Inc. (APPL)
+2.  Microsoft Corp (MSFT)
+3.  Amazon.com Inc (AMZN)
+4.  Alphabet Inc A (GOOGL)
+5.  Alphabet Inc C (GOOG)
+6.  Tesla, Inc (TSLA)
+7.  Unitedhealth Group Inc (UNH)
+8.  Johnson & Johnson (JNJ)
+9.  Exxon Mobil Corp (XOM)
+10. JPMorgan Chase (JPM)
+
+Download data for 10 stocks using `quantmod` package from 2017 to 2021.
+
+```{r cars}
+selected_stocks = c('AAPL','MSFT','AMZN','GOOGL',
+                    'JPM','GOOG','TSLA','UNH','JNJ','XOM')
+  
+for (i in 1:length(selected_stocks)){
+    tmp_ = selected_stocks[i]
+    print(sprintf('Downloading %s stocks... ', tmp_))
+    getSymbols(tmp_)    
+    exec0 = sprintf('%s = %s["2017::2021"]', tmp_, tmp_)
+    eval(parse(text=exec0))
+    exec1 = sprintf('%s = as.data.frame(%s)', tmp_, tmp_)
+    eval(parse(text=exec1))
+    exec2 = sprintf('%s.Timestamp = as.numeric(as.Date(rownames(%s)))', tmp_, tmp_)
+    eval(parse(text=exec2))
+    exec3 = sprintf('%s = cbind(%s.Timestamp, %s)',
+                   tmp_, tmp_, tmp_)
+    eval(parse(text=exec3))
+    exec4 = sprintf('write.table(%s, "%s.txt", row.names=FALSE)', tmp_, tmp_)
+    eval(parse(text=exec4))
+}
+```
+
+Download data for S&P 500 using `quantmod` package from 2017 to 2021.
+
+```{r}
+getSymbols('^GSPC')
+GSPC = GSPC["2017::2021"]
+GSPC <- as.data.frame(GSPC)
+GSPC.Timestamp <- as.numeric(as.Date(rownames(GSPC)))
+GSPC <- cbind(GSPC.Timestamp, GSPC)
+write.table(GSPC, 'GSPC.txt', row.names=FALSE)
+```
+
+Export the downloaded data to text files.
+
+```{r}
+read.bossa.data <- function(vec.names) {
+
+    p <- length(vec.names)
+
+    n1 <- 20000
+    dates <- matrix(99999999, p, n1)
+    closes <- matrix(0, p, n1)
+    max.n2 <- 0
+
+    for (i in 1:p) {
+      filename <- paste("",vec.names[i], ".txt", sep="")
+      tmp <- scan(filename, list(date=numeric(), NULL, NULL, NULL, close=numeric(), NULL, NULL), skip=1, sep="")
+      n2 <- length(tmp$date)
+      max.n2 <- max(n2, max.n2)
+      dates[i,1:n2] <- tmp$date
+      closes[i,1:n2] <- tmp$close
+    }
+
+    dates <- dates[,1:max.n2]
+    closes <- closes[,1:max.n2]
+
+    days <- rep(0, n1) 
+    arranged.closes <- matrix(0, p, n1) 
+    date.indices <- starting.indices <- rep(1, p) 
+    already.started <- rep(0, p) 
+    day <- 1
+
+    while(max(date.indices) <= max.n2) {
+      current.dates <- current.closes <- rep(0, p) 
+      for (i in 1:p) { 
+        current.dates[i] <- dates[i,date.indices[i]]
+        current.closes[i] <- closes[i,date.indices[i]]
+      }
+
+      min.indices <- which(current.dates == min(current.dates))
+      days[day] <- current.dates[min.indices[1]]
+
+      arranged.closes[min.indices,day] <- log(current.closes[min.indices])
+      arranged.closes[-min.indices,day] <- arranged.closes[-min.indices, max(day-1, 1)]
+      already.started[min.indices] <- 1
+      starting.indices[-which(already.started == 1)] <- starting.indices[-which(already.started == 1)] + 1
+      day <- day + 1
+      date.indices[min.indices] <- date.indices[min.indices] + 1
+    }
+
+
+    days <- days[1:(day-1)]
+    arranged.closes <- arranged.closes[,1:(day-1)]
+    max.st.ind <- max(starting.indices)
+    r <- matrix(0, p, (day-max.st.ind-1))
+
+    for (i in 1:p) {
+      r[i,] <- diff(arranged.closes[i,max.st.ind:(day-1)])
+      r[i,] <- r[i,] / sqrt(var(r[i,]))
+      r[i,r[i,]==0] <- rnorm(sum(r[i,]==0))
+    }
+
+    return(list(dates=dates, closes=closes, days=days, arranged.closes=arranged.closes, starting.indices=starting.indices, r=r))
+  }
+```
+
+Names of the selected stocks and S&P 500
+
+```{r}
+index_and_stocks <- c('GSPC',selected_stocks)
+print(index_and_stocks)
+```
+
+Store all downloaded data to `ind` . Extract `date` and `logprice` from `ind`
+
+```{r}
+ind <- read.bossa.data(index_and_stocks)
+date <- ind$date
+logprice <- log(ind$close)
+```
+
+Generate random colours for 1 index and 10 stocks
+
+```{r}
+set.seed(10)
+n <- length(index_and_stocks)
+qual_col_pals = brewer.pal.info[brewer.pal.info$category == 'seq',]
+col_vector = unlist(mapply(brewer.pal, qual_col_pals$maxcolors, rownames(qual_col_pals)))
+colors = sample(col_vector, n)
+```
+
+Plot the daily log closing price of top 10 stocks and S&P 500 from 2017 to 2021
+
+```{r}
+par(mar=c(5, 4, 4, 8), xpd=TRUE)
+
+plot(as.Date(date[1,]), logprice[1,], 
+    main="Daily Log Closing Price of 10 Stocks and S&P 500 \n from 2017 to 2021",
+    ylab="Daily Log Closing Price",
+    xlab="Year",
+    ylim=c(2,9),
+    xlim=c(date[1,1],date[1,dim(date)[2]]),
+    type="l",
+    col=colors[1])
+for (i in 2:length(index_and_stocks)){
+    lines(date[i,], logprice[i,], col=colors[i])
+}
+legend("topright", inset = c(-0.25, 0), index_and_stocks, fill=colors)
+```
+
+### Question 2
+
+Prepare the data for prediction of S&P 500 at time $t+1$ . Include the maximum S&P 500 lag. Split them into a train, validation and test sets. To include the selected stocks, input 1 in mask.
+
+```{r}
+pred.snp.prepare <- function(max.lag = 5, split = c(50, 25), mask = rep(1, 10)) {
+
+
+    ind <- read.bossa.data(index_and_stocks)
+    d <- dim(ind$r)
+
+    start.index <- max(3, max.lag + 1)
+
+    y <- matrix(0, d[2] - start.index + 1, 1)
+
+    x <- matrix(0, d[2] - start.index + 1, d[1] - 1 + max.lag)
+
+    y[,1] <- ind$r[1,start.index:d[2]]
+
+    for (i in 1:max.lag) {
+        x[,i] <- ind$r[1,(start.index-i):(d[2]-i)]
+    }
+
+    shift.indices <- c(0, 0, 0, 0, 0, 0, 0, 0, 0, 0) 
+
+    for (i in 2:(d[1])) {
+
+        x[,i+max.lag-1] <- ind$r[i,(start.index-1-shift.indices[i-1]):(d[2]-1-shift.indices[i-1])]
+    }
+
+    end.training <- round(split[1] / 100 * d[2])
+    end.validation <- round(sum(split[1:2]) / 100 * d[2])
+    x <- x[,as.logical(c(rep(1, max.lag), mask))]
+    
+    y.train <- as.matrix(y[1:end.training], end.training, 1)
+    x.train <- x[1:end.training,]
+
+    y.valid <- as.matrix(y[(end.training+1):(end.validation)], end.validation-end.training, 1)
+    x.valid <- x[(end.training+1):(end.validation),]
+
+    y.test <- as.matrix(y[(end.validation+1):(d[2] - start.index + 1)], d[2]-start.index-end.validation+1, 1)
+    x.test <- x[(end.validation+1):(d[2] - start.index + 1),]
+
+    list(x=x, y=y, x.train=x.train, y.train=y.train, x.valid=x.valid, y.valid=y.valid, x.test=x.test, y.test=y.test)
+
+}
+
+```
+
+Compute the volatility for each covariates and the response in the training set.
+
+```{r}
+
+first.acf.squares.train <- function(x, lambda) {
+  
+# x is an object returned by "pred.snp.prepare"
+# this function computes the volatility for each covariate and the response in the training part
+# it then computes the acfs of the squared residuals after removing the volatility, and adds up
+# the first acfs for each covariate and response
+# the point is to choose lambda so that as much as possible of the acf has been removed
+  
+  d <- dim(x$x.train)
+  
+  ss <- 0
+  
+  x.train.dev <- x$x.train
+  y.train.dev <- x$y.train
+  
+  x.valid.dev <- x$x.valid
+  y.valid.dev <- x$y.valid
+  
+  x.test.dev <- x$x.test
+  y.test.dev <- x$y.test
+  
+  
+  for (i in 1:(d[2])) {
+    v <- vol.exp.sm(x$x.train[,i], lambda)
+    ss <- ss + abs(acf(v$sq.resid, plot=FALSE)$acf[2])
+    x.train.dev[,i] <- v$resid
+    
+    v <- vol.exp.sm(x$x.valid[,i], lambda)
+    x.valid.dev[,i] <- v$resid
+    
+    v <- vol.exp.sm(x$x.test[,i], lambda)
+    x.test.dev[,i] <- v$resid
+    
+  }
+  
+  v <- vol.exp.sm(x$y.train, lambda)
+  ss <- ss + abs(acf(v$sq.resid, plot=FALSE)$acf[2])
+  y.train.dev <- v$resid
+  
+  v <- vol.exp.sm(x$y.valid, lambda)
+  y.valid.dev <- v$resid
+  
+  v <- vol.exp.sm(x$y.test, lambda)
+  y.test.dev <- v$resid
+  
+  list(ss=ss, y.train.dev=y.train.dev, x.train.dev=x.train.dev, y.valid.dev=y.valid.dev, x.valid.dev=x.valid.dev, y.test.dev=y.test.dev, x.test.dev=x.test.dev)
+  
+}
+
+```
+
+Exponential smoothing of $x^2$ with parameter lambda
+
+```{r}
+vol.exp.sm <- function(x, lambda) {
+
+    sigma2 <- x^2
+    n <- length(x)
+
+    for (i in 2:n)
+        sigma2[i] <- sigma2[i-1] * lambda + x[i-1]^2 * (1-lambda)
+
+    sigma <- sqrt(sigma2)
+
+    resid <- x/sigma
+    resid[is.na(resid)] <- 0
+    sq.resid <- resid^2
+
+    list(sigma2=sigma2, sigma=sigma, resid = resid, sq.resid = sq.resid)
+
+}
+```
+
+Find the optimal lambda that minimises residual sum of squares
+
+```{r}
+try_lambda <- function(data) {
+    lambda_x = seq(0.01,0.99,0.01)
+    lambda_ss = c()
+    for (j in 1:length(lambda_x)){
+        tmp_ss = first.acf.squares.train(data, lambda_x[j])$ss
+        lambda_ss = c(lambda_ss,tmp_ss)
+    }
+    print(sprintf('lambda: %s, min ss: %s', 
+        lambda_x[which.min(lambda_ss)],min(lambda_ss)))
+    list(xs=lambda_x, sss=lambda_ss, best=lambda_x[which.min(lambda_ss)])
+}
+```
+
+```{r}
+set.seed(4)
+data <- pred.snp.prepare(max.lag=5)
+lambda_all = try_lambda(data)
+```
+
+Find log-return by using `diff()` function on log-price.
+
+```{r}
+logprice <- as.data.frame(ind$arranged.closes) # logprice # 11*1259
+logreturn <- as.data.frame(t(diff(t(logprice)))) # return  # 11*1258
+```
+
+Plot the log-return of top 10 stocks and S&P 500 from 2017 to 2021
+
+```{r}
+par(mar=c(5, 4, 4, 8), xpd=TRUE)
+
+plot(as.Date(date[1,2:dim(date)[2]]),logreturn[1,], 
+    main="Log-Return of 10 Stocks and S&P 500 \nfrom 2017 to 2021",
+    ylab="Log-Return",
+    xlab="Year",
+    ylim=c(-0.25,0.2),
+    xlim=c(date[1,1],date[1,dim(date)[2]]),
+    type="l",
+    col=colors[1])
+for (i in 2:length(index_and_stocks)){
+    lines(date[1,2:dim(date)[2]], logreturn[i,], col=colors[i])
+}
+
+legend("topright", inset = c(-0.25, 0), index_and_stocks, fill=colors)
+```
+
+Get the estimated daily volatility of S&P 500 and 10 stocks
+
+```{r}
+vol_GSPC = vol.exp.sm(logreturn[1,],lambda_all$best)
+vol_AAPL = vol.exp.sm(logreturn[2,],lambda_all$best)
+vol_MSFT = vol.exp.sm(logreturn[3,],lambda_all$best)
+vol_AMZN = vol.exp.sm(logreturn[4,],lambda_all$best)
+vol_GOOGL = vol.exp.sm(logreturn[5,],lambda_all$best)
+vol_JPM = vol.exp.sm(logreturn[6,],lambda_all$best)
+vol_GOOG = vol.exp.sm(logreturn[7,],lambda_all$best)
+vol_TSLA = vol.exp.sm(logreturn[8,],lambda_all$best)
+vol_UNH = vol.exp.sm(logreturn[9,],lambda_all$best)
+vol_JNJ = vol.exp.sm(logreturn[10,],lambda_all$best)
+vol_XOM = vol.exp.sm(logreturn[11,],lambda_all$best)
+```
+
+Estimated daily volatility of S&P 500 and 10 stocks
+
+```{r}
+volatiliy <- rbind(vol_GSPC$sigma,vol_AAPL$sigma,vol_MSFT$sigma,vol_AMZN$sigma,vol_GOOGL$sigma,
+                   vol_JPM$sigma,vol_GOOG$sigma,vol_TSLA$sigma,vol_UNH$sigma,vol_JNJ$sigma,vol_XOM$sigma)
+dim(volatiliy)
+```
+
+Plot the estimated daily volatility of top 10 Stocks and S&P 500 from 2017 to 2021
+
+```{r}
+par(mar=c(5, 4, 4, 8), xpd=TRUE)
+
+plot(as.Date(date[1,2:dim(date)[2]]),volatiliy[1,], 
+    main="Estimated Daily Volatility of 10 Stocks and S&P 500 \nfrom 2017 to 2021",
+    ylab="Estimated Daily Volatility",
+    xlab="Year",
+    ylim=c(0,0.12),
+    xlim=c(date[1,1],date[1,dim(date)[2]]),
+    type="l",
+    col=colors[1])
+for (i in 2:length(index_and_stocks)){
+    lines(date[1,2:dim(date)[2]], volatiliy[i,], col=colors[i])
+}
+
+legend("topright", inset = c(-0.25, 0), index_and_stocks, fill=colors)
+```
+
+Normalized the returns
+
+```{r}
+norm_return <- logreturn/volatiliy
+dim(norm_return)
+```
+
+Plot the normalise return of top 10 stocks and S&P 500 from 2017 to 2021
+
+```{r}
+par(mar=c(5, 4, 4, 8), xpd=TRUE)
+
+plot(as.Date(date[1,2:dim(date)[2]]),norm_return[1,], 
+    main="Normalise Return of 10 Stocks and S&P 500 \nfrom 2017 to 2021",
+    ylab="Normalise Return",
+    xlab="Year",
+    ylim=c(-10,10),
+    xlim=c(date[1,1],date[1,dim(date)[2]]),
+    type="l",
+    col=colors[1])
+for (i in 2:length(index_and_stocks)){
+    lines(date[1,2:dim(date)[2]], norm_return[i,], col=colors[i])
+}
+
+legend("topright", inset = c(-0.25, 0), index_and_stocks, fill=colors)
+```
+
+Create a data frame, `norm_return` with date as column name and index and stocks as row names.
+
+```{r}
+names(norm_return) <- as.Date(date[1,2:dim(date)[2]])
+rownames(norm_return) <- index_and_stocks
+```
+
+Square the normalized returns
+
+```{r}
+norm_return_sq <- norm_return^2
+```
+
+Plot the ACF of the squared normalized returns of S&P 500 and selected 10 stocks.
+
+```{r}
+par(mfrow=c(3,4))
+for (i in 1:dim(norm_return_sq)[1]){
+  acf(ts(data = t(norm_return_sq[i,]), start = c(2017, 1, 3)),
+    main= paste('ACF of',colnames(ts(data = t(norm_return_sq[i,]), start = c(2017, 1, 3))), sep = ' '))
+}
+
+```
+
+### Question 4
+
+```{r}
+thresh.reg <- function(x, y, th, x.pred = NULL) {
+  
+  # estimation of alpha in y = w + x alpha + epsilon (linear regression)
+  # but only using those covariates in x whose marginal correlation
+  # with y exceeds th
+  # use th = 0 for full regression
+  # note the intercept is added
+  # x.pred is a new x for which we wish to make prediction
+  
+  d <- dim(x)
+  
+  ind <- (abs(cor(x, y)) > th)
+  n <- sum(ind)
+  
+  new.x <- matrix(c(rep(1, d[1]), x[,ind]), d[1], n+1)    ## Adding intercept term 
+  
+  gram = t(new.x) %*% new.x
+  
+  alpha <- solve(gram) %*% t(new.x) %*% matrix(y, d[1], 1)
+  
+  ind.ex <- c(1, as.numeric(ind))
+  
+  ind.ex[ind.ex == 1] <- alpha
+  
+  condnum = max(svd(gram)$d)/min(svd(gram)$d)
+  
+  pr <- 0
+  
+  if (!is.null(x.pred)) pr <- sum(ind.ex * c(1, x.pred))
+  
+  list(alpha = ind.ex, pr=pr, condnum = condnum)
+  
+}
+
+
+Lasso.reg <- function(x, y, th = -1, x.pred = NULL) {
+  
+  # estimation of alpha in y = a + x alpha + epsilon (linear regression) with L1 penalization
+  # Penalty is not specified by delta in lecture notes, 
+  # but the ratio sum of absolute coefficients/max sum of absolute coefficients. 
+  # th = ratio specified above, has a one-one correspondence with delta.
+  # Use th outside [0,1] if want to use 10-fold CV chosen one.
+  # Note the intercept is not here since lars will add it by default
+  # x.pred is a new x for which we wish to make prediction
+  
+  d <- dim(x)
+  ratio <- rep(0,d[2]+1)
+  
+  fit.lasso <- lars(x, y, normalize = FALSE)  ## Not normalizing individual covariates
+  
+  if (th<0 || th>1) { th <- (which.min(cv.lars(x,y, index=seq(from=0, to=1, length=101), plot.it=FALSE)$cv)-1)/100 }  ## Use 10-fold CV chosen th outside [0,1]
+  
+  ## Calculate the different ratios at which certain coefficient is exactly shrunk to 0 ##
+  
+  maxnorm = sum(abs(fit.lasso$alpha[d[2]+1,]))
+  done = 0; i=2
+  while (done==0){
+    ratio[i] <- sum(abs(fit.lasso$alpha[i,]))/maxnorm
+    if (th <= ratio[i] && done == 0) {  
+      alpha = fit.lasso$alpha[i-1,] + (fit.lasso$alpha[i,] - fit.lasso$alpha[i-1,])*(th-ratio[i-1])/(ratio[i]-ratio[i-1])
+      done = 1
+    }
+    i <- i+1
+  }
+  
+  ## Still need to calculate the intercept ##
+  a0 = mean( y - x%*%alpha )
+  
+  alpha = c(a0, alpha)
+  
+  pr <- 0
+  
+  if (!is.null(x.pred)) pr <- sum(alpha * c(1, x.pred))
+  
+  condnum = -1  ## Not really matter here, just conform with thresh.reg outputs
+  
+  list(alpha = alpha, pr=pr, th=th, condnum=condnum)
+  
+}
+
+
+
+
+
+sharpe.curves <- function(x, lambda, th, warmup, reg.function = thresh.reg, win = seq(from = 10, to = warmup, by = 10)) {
+  
+  # computes Sharpe ratios for a sequence of rolling windows (D in the lecture notes)
+  # for the training, validation and test sets
+  
+  w <- length(win)
+  
+  train.curve <- valid.curve <- test.curve <- rep(0, w)
+  
+  n <- length(x$y.train)
+  
+  i=1
+  rreg <- rolling.thresh.reg(x, lambda, th, win[i], warmup, reg.function)
+  rreg.valid <- rolling.thresh.reg.valid(x, lambda, th, win[i], warmup, reg.function)  
+  rreg.test <- rolling.thresh.reg.test(x, lambda, th, win[i], warmup, reg.function)
+  
+  condnum = matrix(0,w,length(rreg$condnum))
+  condnum.valid = matrix(0,w,length(rreg.valid$condnum))
+  condnum.test = matrix(0,w,length(rreg.test$condnum))
+  
+  train.curve[i] <- rreg$err
+  valid.curve[i] <- rreg.valid$err
+  test.curve[i] <- rreg.test$err
+  
+  condnum[i,] <- rreg$condnum
+  condnum.valid[i,] <- rreg.valid$condnum
+  condnum.test[i,] <- rreg.test$condnum
+  
+  for (i in 2:w) {
+    rreg <- rolling.thresh.reg(x, lambda, th, win[i], warmup, reg.function)
+    rreg.valid <- rolling.thresh.reg.valid(x, lambda, th, win[i], warmup, reg.function)  
+    rreg.test <- rolling.thresh.reg.test(x, lambda, th, win[i], warmup, reg.function)
+    
+    train.curve[i] <- rreg$err
+    valid.curve[i] <- rreg.valid$err
+    test.curve[i] <- rreg.test$err
+    
+    condnum[i,] <- rreg$condnum
+    condnum.valid[i,] <- rreg.valid$condnum
+    condnum.test[i,] <- rreg.test$condnum
+  }
+  
+  list(train.curve = train.curve, valid.curve = valid.curve, test.curve = test.curve, condnum=condnum, condnum.valid = condnum.valid, condnum.test = condnum.test)
+}
+
+
+
+
+
+rolling.thresh.reg <- function(x, lambda, th, win, warmup, reg.function = thresh.reg) {
+  
+  # performs prediction over a rolling window of size win
+  # over the training set
+  # x - returned by pred.footsie.prepare
+  # lambda - parameter for exponential smoothing
+  # th - threshold for thresh.reg
+  # warmup - t_0 from the lecture notes
+  
+  
+  xx <- first.acf.squares.train(x, lambda)
+  
+  n <- length(xx$y.train.dev)
+  
+  err <- 0
+  
+  condnum <- predi <- truth <- rep(0, n-warmup+1)
+  
+  for (i in warmup:n) {
+    
+    y <- xx$y.train.dev[(i-win):(i-1)]
+    xxx <- xx$x.train.dev[(i-win):(i-1),]
+    
+    zz <- reg.function(xxx, y, th, xx$x.train.dev[i,])
+    
+    predi[i-warmup+1] <- zz$pr
+    condnum[i-warmup+1] <- zz$condnum
+    truth[i-warmup+1] <- xx$y.train.dev[i]
+    
+  }
+  
+  ret <- predi * truth
+  
+  err <- sqrt(250) * mean(ret) / sqrt(var(ret))
+  
+  list(err=err, predi=predi, truth=truth, condnum=condnum)
+  
+}
+
+
+rolling.thresh.reg.valid <- function(x, lambda, th, win, warmup, reg.function = thresh.reg) {
+  
+  # The same as the previous function but for the validation set
+  
+  xx <- first.acf.squares.train(x, lambda)
+  
+  n <- length(xx$y.valid.dev)
+  
+  err <- 0
+  
+  condnum <- predi <- truth <- rep(0, n-warmup+1)
+  
+  for (i in warmup:n) {
+    
+    y <- xx$y.valid.dev[(i-win):(i-1)]
+    xxx <- xx$x.valid.dev[(i-win):(i-1),]
+    
+    zz <- reg.function(xxx, y, th, xx$x.valid.dev[i,])
+    
+    predi[i-warmup+1] <- zz$pr
+    condnum[i-warmup+1] <- zz$condnum
+    truth[i-warmup+1] <- xx$y.valid.dev[i]
+    
+  }
+  
+  
+  ret <- predi * truth
+  
+  err <- sqrt(250) * mean(ret) / sqrt(var(ret))
+  
+  list(err=err, predi=predi, truth=truth, condnum=condnum)
+  
+}
+
+
+rolling.thresh.reg.test <- function(x, lambda, th, win, warmup, reg.function = thresh.reg) {
+  
+  # The same as the previous function but for the test set
+  
+  xx <- first.acf.squares.train(x, lambda)
+  
+  n <- length(xx$y.test.dev)
+  
+  err <- 0
+  
+  condnum <- predi <- truth <- rep(0, n-warmup+1)
+  
+  for (i in warmup:n) {
+    
+    y <- xx$y.test.dev[(i-win):(i-1)]
+    xxx <- xx$x.test.dev[(i-win):(i-1),]
+    zz <- reg.function(xxx, y, th, xx$x.test.dev[i,])
+    
+    predi[i-warmup+1] <- zz$pr
+    condnum[i-warmup+1] <- zz$condnum
+    truth[i-warmup+1] <- xx$y.test.dev[i]
+    
+  }
+  
+  
+  ret <- predi * truth
+  
+  err <- sqrt(250) * mean(ret) / sqrt(var(ret))
+  
+  list(err=err, predi=predi, truth=truth, condnum=condnum)
+  
+}
+
+
+sim.grid <- function(x, lambda, win, warmup = 250, reg.function = thresh.reg, th.grid = seq(from = 0, to = 1, by = .01)) {
+  
+  # Which threshold th best over training set?
+  
+  tt <- length(th.grid)
+  
+  res <- rep(0, tt)
+  
+  for (i in 1:tt) res[i] <- rolling.thresh.reg(x, lambda, th.grid[i], win, warmup, reg.function)$err
+  
+  res
+  
+}
+
+sim.grid.valid <- function(x, lambda, win, warmup = 250, reg.function = thresh.reg, th.grid = seq(from = 0, to = 1, by = .01)) {
+  
+  # The same over the validation set.
+  
+  tt <- length(th.grid)
+  
+  res <- rep(0, tt)
+  
+  for (i in 1:tt) res[i] <- rolling.thresh.reg.valid(x, lambda, th.grid[i], win, warmup, reg.function)$err
+  
+  res
+  
+}
+
+```
+
+Sharpe ratios for different window lengths at lag q = 0
+
+```{r}
+q0 <- 0
+win <- seq(from = 50, to= 250, by = 20)
+data0 <- pred.snp.prepare(q0)
+sc0 <- sharpe.curves(data0, lambda_all$best, 0, 250, win =win)
+
+length(sc0$train.curve)
+win
+
+plot(win, sc0$train.curve, type='l', 
+     ylim=c(-4,3), col='red',
+     ylab='Sharpe Ratio', xlab='Window Length',
+     main='Sharpe Ratios for Different Window Lengths at Lag q = 0')
+lines(win, sc0$valid.curve, col='green')
+lines(win, sc0$test.curve, col='blue')
+legend("topright", c('train','validation','test'), fill=c('red','green','blue'))
+```
+
+Condition numbers at different time points for $X^TX$/10 of the test set at lag q = 0
+
+```{r}
+par(mfrow=c(1,2))
+plot.ts(sc0$condnum.test[4,],
+        main='D = 110, q = 0',
+        ylab='Condition Number', xlab='Time')
+plot.ts(sc0$condnum.test[11,],main='D = 250, q = 0',
+        ylab='Condition Number', xlab='Time')
+```
+
+Sharpe ratios for different window lengths at lag q = 1
+
+```{r}
+q1 <- 1
+data1 <- pred.snp.prepare(q1)
+sc1 <- sharpe.curves(data1, lambda_all$best, 0, 250, win =win)
+plot(win, sc1$train.curve, type='l', 
+     ylim=c(-4,3), col='red',
+     ylab='Sharpe Ratio', xlab='Window Length',
+     main='Sharpe Ratios for Different Window Lengths at Lag q = 1')
+lines(win, sc1$valid.curve, col='green')
+lines(win, sc1$test.curve, col='blue')
+legend("topright", c('train','validation','test'), fill=c('red','green','blue'))
+```
+
+Condition numbers at different time points for $X^TX$/10 of the test set at lag q = 1
+
+```{r}
+par(mfrow=c(1,2))
+plot.ts(sc1$condnum.test[4,],main='D = 110, q = 1',
+        ylab='Condition Number', xlab='Time')
+plot.ts(sc1$condnum.test[11,],main='D = 250, q = 1',
+        ylab='Condition Number', xlab='Time')
+```
+
+### Question 5
+
+Consider which $\theta$ is the best by looking at the output of sharpe ratio obtained by marginal correlation screening.
+
+Lag = 0 for training set. Maximum sharpe ratio is 0.70307753.Hence, $\theta$ = 0.03
+
+```{r}
+sim.grid(data0, lambda_all$best, 250)
+
+```
+
+Lag = 0 for validation set. Maximum sharpe ratio is 1.42381875.Hence, $\theta$ = 0.06
+
+```{r}
+sim.grid.valid(data0,lambda_all$best, 250)
+```
+
+Lag = 1 for training set.Maximum sharpe ratio is 0.906319535. Hence, $\theta$ = 0.03
+
+```{r}
+sim.grid(data1, lambda_all$best, 250)
+```
+
+Lag = 1 for validation set.Maximum sharpe ratio is 0.948576244 . Hence, $\theta$ = 0.07
+
+```{r}
+sim.grid.valid(data1,lambda_all$best, 250)
+```
